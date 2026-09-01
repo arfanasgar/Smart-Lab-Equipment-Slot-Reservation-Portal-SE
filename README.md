@@ -1,6 +1,6 @@
 # Arfan Asgar
 
-**SRN:** `YOUR_SRN`
+**SRN:** `PES1UG24AM163`
 
 ---
 
@@ -21,4 +21,4 @@ This repository contains the work, assignments, lab exercises, and project deliv
 
 ## Repository
 
-GitHub: https://github.com/YOUR_USERNAME/YOUR_REPOSITORY
+GitHub: https://github.com/arfanasgar/Smart-Lab-Equipment-Slot-Reservation-Portal-SE
