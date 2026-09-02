@@ -6,7 +6,7 @@
 
 # Software Engineering Lab — Team 01
 
-Software Engineering Laboratory — Team 03
+Software Engineering Laboratory — Team 01
 
 ## Team Repository
 
