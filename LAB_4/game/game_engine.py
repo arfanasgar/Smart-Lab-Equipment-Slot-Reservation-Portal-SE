@@ -23,6 +23,7 @@ ORB_RADIUS = 12
 ORB_SPEED = 2.2
 ORB_COLOR = (80, 255, 160)
 SHIELD_COLOR = (80, 220, 255)
+SURVIVAL_MILESTONE_FRAMES = 10 * FPS  # 10 seconds at 60 FPS
 
 
 class ShieldOrb:
@@ -95,6 +96,8 @@ class GameEngine:
         self.next_orb_spawn = random.randint(8 * FPS, 12 * FPS)
         self.spawn_interval = 60
         self.score = 0
+        self.survival_frames = 0
+        self.multiplier = 1
 
         self.game_over = False
         self.started = False
@@ -169,13 +172,15 @@ class GameEngine:
             if laser.bottom > 0
         ]
 
-        # Update meteors and resolve ship collisions. An active shield
-        # absorbs exactly one collision and destroys that meteor.
+        # Update meteors and resolve ship collisions. Any collision breaks
+        # the consecutive-survival streak, even if the shield absorbs it.
         shield_absorbed_meteor = None
+        hit_this_frame = False
         for meteor in self.meteors:
             meteor.update()
 
             if meteor.collides(self.ship.rect):
+                hit_this_frame = True
                 if self.shield_active:
                     self.shield_active = False
                     shield_absorbed_meteor = id(meteor)
@@ -238,7 +243,17 @@ class GameEngine:
         # the meteor list while iterating over it.
         self.meteors.extend(new_fragments)
 
-        self.score += 1
+        # Increase the score multiplier for every 10 seconds survived
+        # continuously without a meteor hit. A hit resets the streak.
+        if hit_this_frame:
+            self.survival_frames = 0
+        else:
+            self.survival_frames += 1
+
+        self.multiplier = 1 + (
+            self.survival_frames // SURVIVAL_MILESTONE_FRAMES
+        )
+        self.score += self.multiplier
 
     def draw(self):
         self.screen.fill(BG)
@@ -303,6 +318,29 @@ class GameEngine:
         )
 
         self.screen.blit(timer_text, (10, 10))
+
+        # Consecutive-survival multiplier and progress to the next tier.
+        multiplier_text = self.font.render(
+            f"Score: {self.score}  x{self.multiplier}",
+            True,
+            (255, 220, 100),
+        )
+        self.screen.blit(
+            multiplier_text,
+            (WIDTH - multiplier_text.get_width() - 10, 10),
+        )
+
+        streak_seconds = self.survival_frames // FPS
+        next_tier_seconds = (
+            SURVIVAL_MILESTONE_FRAMES -
+            (self.survival_frames % SURVIVAL_MILESTONE_FRAMES)
+        ) // FPS
+        streak_text = self.font.render(
+            f"Streak: {streak_seconds}s | Next x{self.multiplier + 1}: {next_tier_seconds}s",
+            True,
+            (200, 220, 255),
+        )
+        self.screen.blit(streak_text, (10, 74))
 
         # Title screen.
         if not self.started:
