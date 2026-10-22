@@ -2,8 +2,10 @@
 import pygame
 import random
 import math
+
 from game.ship import Ship
 from game.meteor import Meteor
+
 
 WIDTH, HEIGHT = 700, 520
 FPS = 60
@@ -20,8 +22,10 @@ LASER_GLOW = (30, 120, 255)
 class GameEngine:
     def __init__(self):
         pygame.init()
+
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("Meteor Dodge")
+
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("monospace", 26, bold=True)
         self.big_font = pygame.font.SysFont("monospace", 46, bold=True)
@@ -39,22 +43,26 @@ class GameEngine:
 
     def reset(self):
         self.ship = Ship(WIDTH // 2, HEIGHT - 80)
+
         self.meteors = []
         self.lasers = []
+
         self.timer = 0
         self.spawn_interval = 60
         self.score = 0
+
         self.game_over = False
         self.started = False
 
     def fire_laser(self):
-        """Create a laser projectile at the ship's position."""
+        """Fire an upward-moving laser from the ship."""
         laser = pygame.Rect(
             self.ship.rect.centerx - LASER_WIDTH // 2,
             self.ship.rect.top - LASER_HEIGHT,
             LASER_WIDTH,
             LASER_HEIGHT,
         )
+
         self.lasers.append(laser)
 
     def handle_events(self):
@@ -69,7 +77,6 @@ class GameEngine:
                     elif not self.started:
                         self.started = True
                     else:
-                        # SPACE fires only during active gameplay.
                         self.fire_laser()
 
         return True
@@ -86,19 +93,20 @@ class GameEngine:
         if self.timer >= self.spawn_interval:
             self.meteors.append(Meteor(WIDTH))
             self.timer = 0
-            self.spawn_interval = max(20, self.spawn_interval - 0.3)
+            self.spawn_interval = max(
+                20, self.spawn_interval - 0.3
+            )
 
-        # Move lasers upward.
+        # Move lasers.
         for laser in self.lasers:
             laser.y -= LASER_SPEED
 
-        # Remove lasers that have left the screen.
         self.lasers = [
             laser for laser in self.lasers
             if laser.bottom > 0
         ]
 
-        # Move meteors and check ship collisions.
+        # Update meteors and check ship collisions.
         for meteor in self.meteors:
             meteor.update()
 
@@ -106,47 +114,54 @@ class GameEngine:
                 self.game_over = True
                 break
 
-        # Check laser-meteor collisions.
-        # Each laser and meteor can be consumed only once.
-        remaining_meteors = []
-        hit_meteors = set()
+        if self.game_over:
+            return
 
-        for laser in self.lasers:
-            laser_hit = False
+        # Resolve laser collisions without modifying the meteor list
+        # while iterating through it.
+        destroyed_ids = set()
+        consumed_lasers = set()
+        new_fragments = []
 
+        for laser_index, laser in enumerate(self.lasers):
             for meteor in self.meteors:
                 meteor_id = id(meteor)
 
-                if meteor_id in hit_meteors:
+                # A meteor can only be destroyed once per frame.
+                if meteor_id in destroyed_ids:
                     continue
 
                 dx = meteor.x - laser.centerx
                 dy = meteor.y - laser.centery
-                distance = math.sqrt(dx * dx + dy * dy)
 
-                # Treat the laser as a small circle for collision.
+                # Approximate the laser as a circle for collision.
+                distance = math.hypot(dx, dy)
+
                 if distance < meteor.radius + LASER_HEIGHT / 2:
-                    hit_meteors.add(meteor_id)
-                    laser_hit = True
+                    destroyed_ids.add(meteor_id)
+                    consumed_lasers.add(laser_index)
+
+                    # Large meteors split; small ones disappear.
+                    new_fragments.extend(meteor.split(WIDTH))
                     break
 
-            if laser_hit:
-                laser.width = 0
-                laser.height = 0
-
-        # Keep meteors that were not destroyed and are still on screen.
-        for meteor in self.meteors:
-            if id(meteor) not in hit_meteors:
-                if not meteor.off_screen(HEIGHT):
-                    remaining_meteors.append(meteor)
-
-        self.meteors = remaining_meteors
-
-        # Remove lasers that hit meteors.
+        # Keep only lasers that have not hit a meteor.
         self.lasers = [
-            laser for laser in self.lasers
-            if laser.width > 0 and laser.height > 0
+            laser
+            for index, laser in enumerate(self.lasers)
+            if index not in consumed_lasers
         ]
+
+        # Remove destroyed and off-screen meteors.
+        self.meteors = [
+            meteor for meteor in self.meteors
+            if id(meteor) not in destroyed_ids
+            and not meteor.off_screen(HEIGHT)
+        ]
+
+        # Add fragments after collision processing to avoid modifying
+        # the meteor list while iterating over it.
+        self.meteors.extend(new_fragments)
 
         self.score += 1
 
@@ -156,45 +171,55 @@ class GameEngine:
         # Background starfield.
         for sx, sy, sr in self.stars:
             pygame.draw.circle(
-                self.screen, (200, 200, 220), (sx, sy), sr
+                self.screen,
+                (200, 200, 220),
+                (sx, sy),
+                sr,
             )
 
-        # Draw meteors.
+        # Meteors and fragments.
         for meteor in self.meteors:
             meteor.draw(self.screen)
 
-        # Draw lasers with a glow effect.
+        # Laser glow and core.
         for laser in self.lasers:
-            glow_rect = laser.inflate(8, 6)
             pygame.draw.rect(
-                self.screen, LASER_GLOW, glow_rect, border_radius=4
-            )
-            pygame.draw.rect(
-                self.screen, LASER_COLOR, laser, border_radius=2
+                self.screen,
+                LASER_GLOW,
+                laser.inflate(8, 6),
+                border_radius=4,
             )
 
-        # Draw the ship.
+            pygame.draw.rect(
+                self.screen,
+                LASER_COLOR,
+                laser,
+                border_radius=2,
+            )
+
         self.ship.draw(self.screen)
 
         # Survival timer.
-        sc = self.font.render(
+        timer_text = self.font.render(
             f"Time: {self.score // 60}s",
             True,
             (200, 200, 240),
         )
-        self.screen.blit(sc, (10, 10))
+
+        self.screen.blit(timer_text, (10, 10))
 
         # Title screen.
         if not self.started:
-            msg = self.font.render(
+            message = self.font.render(
                 "Press SPACE to launch",
                 True,
                 (180, 180, 240),
             )
+
             self.screen.blit(
-                msg,
+                message,
                 (
-                    WIDTH // 2 - msg.get_width() // 2,
+                    WIDTH // 2 - message.get_width() // 2,
                     HEIGHT // 2,
                 ),
             )
@@ -202,14 +227,19 @@ class GameEngine:
         # Game Over overlay.
         if self.game_over:
             overlay = pygame.Surface(
-                (WIDTH, HEIGHT), pygame.SRCALPHA
+                (WIDTH, HEIGHT),
+                pygame.SRCALPHA,
             )
+
             overlay.fill((0, 0, 0, 150))
             self.screen.blit(overlay, (0, 0))
 
             message = self.big_font.render(
-                "DESTROYED!", True, (220, 80, 60)
+                "DESTROYED!",
+                True,
+                (220, 80, 60),
             )
+
             subtitle = self.font.render(
                 f"Survived {self.score // 60}s | SPACE to Restart",
                 True,
@@ -223,6 +253,7 @@ class GameEngine:
                     HEIGHT // 2 - 40,
                 ),
             )
+
             self.screen.blit(
                 subtitle,
                 (
@@ -243,3 +274,4 @@ class GameEngine:
             self.clock.tick(FPS)
 
         pygame.quit()
+
