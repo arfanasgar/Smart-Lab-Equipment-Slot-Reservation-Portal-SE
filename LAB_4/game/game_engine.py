@@ -18,6 +18,47 @@ LASER_HEIGHT = 18
 LASER_COLOR = (80, 240, 255)
 LASER_GLOW = (30, 120, 255)
 
+# Shield-orb settings
+ORB_RADIUS = 12
+ORB_SPEED = 2.2
+ORB_COLOR = (80, 255, 160)
+SHIELD_COLOR = (80, 220, 255)
+
+
+class ShieldOrb:
+    """A collectible orb that grants one-hit meteor protection."""
+
+    def __init__(self):
+        self.x = random.randint(ORB_RADIUS + 8, WIDTH - ORB_RADIUS - 8)
+        self.y = -ORB_RADIUS
+        self.radius = ORB_RADIUS
+        self.speed = ORB_SPEED
+
+    def update(self):
+        self.y += self.speed
+
+    def off_screen(self):
+        return self.y - self.radius > HEIGHT
+
+    def collides(self, rect):
+        dx = self.x - rect.centerx
+        dy = self.y - rect.centery
+        return math.hypot(dx, dy) < self.radius + 18
+
+    def draw(self, screen):
+        # Outer glow, orb body, and a simple plus symbol.
+        center = (int(self.x), int(self.y))
+        pygame.draw.circle(screen, (25, 100, 75), center, self.radius + 5)
+        pygame.draw.circle(screen, ORB_COLOR, center, self.radius)
+        pygame.draw.line(
+            screen, (240, 255, 245),
+            (center[0] - 5, center[1]), (center[0] + 5, center[1]), 3
+        )
+        pygame.draw.line(
+            screen, (240, 255, 245),
+            (center[0], center[1] - 5), (center[0], center[1] + 5), 3
+        )
+
 
 class GameEngine:
     def __init__(self):
@@ -46,8 +87,12 @@ class GameEngine:
 
         self.meteors = []
         self.lasers = []
+        self.shield_orbs = []
+        self.shield_active = False
 
         self.timer = 0
+        self.orb_timer = 0
+        self.next_orb_spawn = random.randint(8 * FPS, 12 * FPS)
         self.spawn_interval = 60
         self.score = 0
 
@@ -97,6 +142,24 @@ class GameEngine:
                 20, self.spawn_interval - 0.3
             )
 
+        # Occasionally spawn a collectible shield orb.
+        self.orb_timer += 1
+        if self.orb_timer >= self.next_orb_spawn:
+            self.shield_orbs.append(ShieldOrb())
+            self.orb_timer = 0
+            self.next_orb_spawn = random.randint(8 * FPS, 12 * FPS)
+
+        # Move and collect shield orbs.
+        for orb in self.shield_orbs:
+            orb.update()
+            if orb.collides(self.ship.rect):
+                self.shield_active = True
+
+        self.shield_orbs = [
+            orb for orb in self.shield_orbs
+            if not orb.off_screen() and not orb.collides(self.ship.rect)
+        ]
+
         # Move lasers.
         for laser in self.lasers:
             laser.y -= LASER_SPEED
@@ -106,16 +169,28 @@ class GameEngine:
             if laser.bottom > 0
         ]
 
-        # Update meteors and check ship collisions.
+        # Update meteors and resolve ship collisions. An active shield
+        # absorbs exactly one collision and destroys that meteor.
+        shield_absorbed_meteor = None
         for meteor in self.meteors:
             meteor.update()
 
             if meteor.collides(self.ship.rect):
+                if self.shield_active:
+                    self.shield_active = False
+                    shield_absorbed_meteor = id(meteor)
+                    break
                 self.game_over = True
                 break
 
         if self.game_over:
             return
+
+        if shield_absorbed_meteor is not None:
+            self.meteors = [
+                meteor for meteor in self.meteors
+                if id(meteor) != shield_absorbed_meteor
+            ]
 
         # Resolve laser collisions without modifying the meteor list
         # while iterating through it.
@@ -181,6 +256,10 @@ class GameEngine:
         for meteor in self.meteors:
             meteor.draw(self.screen)
 
+        # Collectible shield orbs.
+        for orb in self.shield_orbs:
+            orb.draw(self.screen)
+
         # Laser glow and core.
         for laser in self.lasers:
             pygame.draw.rect(
@@ -197,7 +276,24 @@ class GameEngine:
                 border_radius=2,
             )
 
+        # Draw a visible barrier while the one-hit shield is active.
+        if self.shield_active:
+            shield_center = self.ship.rect.center
+            pygame.draw.circle(
+                self.screen, SHIELD_COLOR, shield_center, 29, 3
+            )
+            pygame.draw.circle(
+                self.screen, (35, 100, 150), shield_center, 33, 1
+            )
+
         self.ship.draw(self.screen)
+
+        # Shield status HUD.
+        if self.shield_active:
+            shield_text = self.font.render(
+                "SHIELD READY", True, SHIELD_COLOR
+            )
+            self.screen.blit(shield_text, (10, 42))
 
         # Survival timer.
         timer_text = self.font.render(
